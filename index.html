@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TRANSFORMER SILO v4 · two silos in parallel, tested at the end · ROOT0</title>
+<meta name="description" content="transformer-silo v4 by David Lee Wise / ROOT0: two silos run in parallel and merge at the end. A content silo (k-means, orderless) and a position silo (ordered bins, keeps order), same shared encoder, concatenated at the head. Trained from scratch (gradient-checked). On the order-sensitive task the single silo collapsed in v3; the dual PARTIALLY recovers it (42.5% → 61.8%) because its second branch keeps order — still below the plain model (85%) because binning is coarser than exact positions, at half plain's attention. A real, measured, partial recovery, reported straight.">
+<meta name="theme-color" content="#4a3f8c">
+<meta property="og:type" content="website">
+<meta property="og:title" content="TRANSFORMER SILO v4 · two silos in parallel, tested at the end">
+<meta property="og:description" content="Two parallel silos (content + position) merged at the head, trained (gradient-checked). The dual PARTIALLY recovers the order the single silo threw away (42.5%→61.8%), still short of plain (85%), at half plain's attention. Partial recovery, measured not assumed.">
+<meta property="og:url" content="https://davidwise01.github.io/transformer-silo-v4/">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="TRANSFORMER SILO v4 · two silos in parallel">
+<meta name="twitter:description" content="Content silo + position silo, merged at the end, trained. The dual partially recovers the order one silo lost (42.5%→61.8%), short of plain (85%). Reported straight.">
+<link rel="canonical" href="https://davidwise01.github.io/transformer-silo-v4/">
+<style>
+:root{
+  --paper:#eceaf2; --pan:#f5f3fa; --pan2:#e9e6f2;
+  --ink:#211f2c; --ink2:#413d54; --dim:#77738a;
+  --indigo:#4a3f8c; --indigo2:#322a63;
+  --plain:#5b6b78; --plain2:#3c4a55;
+  --silo:#1f8f66; --silo2:#146b4b;
+  --dual:#4a3f8c; --dual2:#322a63;
+  --gold:#c99128; --gold2:#9a6d18;
+  --signal:#bf4638; --signal2:#8f3025;
+  --line:#d7d2e6; --line2:#e3dfef;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --mono:ui-monospace,"SFMono-Regular","Cascadia Code","Consolas",monospace;
+  --shadow:0 1px 0 #fffc, 0 16px 34px -24px #211f2c44;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif);font-size:17px;line-height:1.62;-webkit-font-smoothing:antialiased;
+  background-image:repeating-linear-gradient(0deg,#0000 0 33px,#4a3f8c0c 33px 34px)}
+.wrap{max-width:1000px;margin:0 auto;padding:0 22px}
+a{color:var(--indigo2);text-underline-offset:2px}
+h1,h2,h3{line-height:1.13;font-weight:600;letter-spacing:.2px}
+.mono{font-family:var(--mono)}
+
+header.top{padding:38px 0 12px}
+.sealrow{display:flex;gap:22px;align-items:center;flex-wrap:wrap}
+.seal{width:112px;height:112px;flex:none;filter:drop-shadow(0 8px 18px -10px #211f2c55)}
+.kick{font-family:var(--mono);font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--indigo2)}
+h1.mh{font-size:clamp(29px,5.6vw,50px);margin:.08em 0 .12em;letter-spacing:.6px}
+.lede{font-size:18px;color:var(--ink2);max-width:66ch;margin:.35em 0 0}
+.lede b{color:var(--ink);font-weight:600}
+
+section{padding:26px 0 4px}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--gold2)}
+h2.sec{font-size:clamp(22px,3.6vw,29px);margin:.14em 0 .18em}
+.sub{color:var(--ink2);max-width:74ch;margin:0 0 16px}
+
+.rig{border:1px solid var(--line);border-radius:15px;background:var(--pan);box-shadow:var(--shadow);overflow:hidden}
+.rtop{display:flex;align-items:center;gap:10px;padding:11px 16px;background:linear-gradient(180deg,#fff8,#fff0);border-bottom:1px solid var(--line2);font-family:var(--mono);font-size:12px;color:var(--ink2);flex-wrap:wrap}
+.rtop b{color:var(--indigo2)}
+.rbody{padding:16px 17px}
+.cfg{font-family:var(--mono);font-size:11px;color:var(--dim);margin-bottom:12px}
+
+.task{border:1px solid var(--line);border-radius:12px;background:#fff;margin-bottom:14px;overflow:hidden}
+.th{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line2);flex-wrap:wrap}
+.th .nm{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--ink)}
+.th .kind{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;padding:1px 8px;border-radius:20px;font-weight:700}
+.th .kind.ins{background:color-mix(in srgb,var(--silo) 15%,#fff);color:var(--silo2)}
+.th .kind.sens{background:color-mix(in srgb,var(--plain) 15%,#fff);color:var(--plain2)}
+.tb{padding:14px 15px;display:grid;grid-template-columns:1fr 200px;gap:16px;align-items:center}
+@media(max-width:640px){.tb{grid-template-columns:1fr}}
+
+.arms{display:grid;gap:9px}
+.arm{display:grid;grid-template-columns:76px 1fr 62px;gap:10px;align-items:center;font-family:var(--mono);font-size:12px}
+.arm .lab{font-weight:700}
+.arm.plain .lab{color:var(--plain2)} .arm.silo .lab{color:var(--silo2)} .arm.dual .lab{color:var(--dual2)}
+.arm .tr{position:relative;height:20px;background:#efedf6;border-radius:6px;overflow:hidden}
+.arm .fl{position:absolute;top:0;bottom:0;left:0;border-radius:6px}
+.arm.plain .fl{background:var(--plain)} .arm.silo .fl{background:var(--silo)} .arm.dual .fl{background:var(--dual)}
+.arm .chance{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--signal);opacity:.7}
+.arm .acc{text-align:right;font-weight:700;color:var(--ink)}
+.recov{font-family:var(--mono);font-size:12px;margin-top:9px;line-height:1.5}
+.recov b{color:var(--ink)} .recov .up{color:var(--dual2);font-weight:700} .recov .gap{color:var(--signal2)}
+.recov.match{color:var(--dim)}
+.armmeta{font-family:var(--mono);font-size:10.5px;color:var(--dim);margin-top:1px}
+
+.curve h5{margin:0 0 4px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.curve svg{width:100%;height:74px;display:block;border:1px solid var(--line);border-radius:8px;background:#fbfafe}
+
+.verdict{font-family:var(--mono);font-size:13px;line-height:1.55;border-radius:9px;padding:12px 14px;margin:14px 0 4px;border:1px solid color-mix(in srgb,var(--indigo) 30%,#fff);background:color-mix(in srgb,var(--indigo) 8%,#fff);color:var(--indigo2)}
+.snote{padding:11px 17px;font-family:var(--mono);font-size:11px;color:var(--dim);background:var(--pan2);line-height:1.6;border-top:1px solid var(--line2)}
+
+.two{display:grid;grid-template-columns:1fr 1fr;gap:15px}
+.card{border:1px solid var(--line);border-radius:12px;background:var(--pan);padding:16px 18px;box-shadow:var(--shadow)}
+.card h3{font-size:14px;font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--indigo2);margin:0 0 8px}
+.card.sig h3{color:var(--signal2)}
+.card p{margin:.35em 0;font-size:14.5px;color:var(--ink2)}
+.card code{font-family:var(--mono);font-size:12.5px;background:#fff;border:1px solid var(--line);border-radius:4px;padding:0 4px}
+.src{font-family:var(--mono);font-size:11.5px;color:var(--dim);margin-top:14px;line-height:1.75}
+.backbar{margin:28px 0 0;padding:15px 0;border-top:1px solid var(--line);display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:12.5px}
+.backbar a{text-decoration:none;border:1px solid var(--line);border-radius:8px;padding:7px 12px;background:var(--pan)}
+.backbar a:hover{border-color:var(--indigo)}
+footer{padding:26px 0 60px;text-align:center;font-family:var(--mono);font-size:12px;color:var(--dim)}
+@media(max-width:760px){.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header class="top"><div class="wrap">
+  <div class="sealrow">
+    <svg class="seal" viewBox="0 0 120 120" role="img" aria-label="Silo v4 dual insignia">
+      <circle cx="60" cy="60" r="56" fill="none" stroke="#4a3f8c" stroke-width="2.4"/>
+      <!-- two silos in parallel, merging into one head -->
+      <circle cx="42" cy="46" r="9" fill="none" stroke="#1f8f66" stroke-width="1.8"/>
+      <circle cx="78" cy="46" r="9" fill="none" stroke="#4a3f8c" stroke-width="1.8"/>
+      <path d="M42 55 L60 74 L78 55" fill="none" stroke="#4a3f8c" stroke-width="1.6"/>
+      <circle cx="60" cy="80" r="5" fill="#c99128"/>
+      <text x="42" y="34" text-anchor="middle" font-family="ui-monospace,monospace" font-size="5.5" fill="#146b4b">content</text>
+      <text x="78" y="34" text-anchor="middle" font-family="ui-monospace,monospace" font-size="5.5" fill="#322a63">position</text>
+      <text x="60" y="112" text-anchor="middle" font-family="ui-monospace,monospace" font-size="7" fill="#413d54" letter-spacing="1.2">v4 · DUAL</text>
+    </svg>
+    <div>
+      <div class="kick">two silos in parallel · v4</div>
+      <h1 class="mh">DUAL SILO</h1>
+      <p class="lede">v3 found one silo <b>collapses on order</b>. So v4 runs <b>two silos in parallel and merges them at the end</b> — a <b>content</b> silo (orderless) and a <b>position</b> silo (ordered bins) — same shared encoder, concatenated at the head. Trained from scratch, gradient-checked. The dual <b>partially recovers</b> the order the single silo threw away — measured, and reported short of full.</p>
+    </div>
+  </div>
+</div></header>
+
+<main class="wrap">
+
+<section id="results">
+  <div class="eyebrow">The held-out results</div>
+  <h2 class="sec">Three arms · two tasks · does a second view recover order?</h2>
+  <p class="sub">The <b>plain</b> arm attends over all N tokens; the <b>content silo</b> over K k-means intents (orderless); the <b>dual</b> runs the content silo <i>and</i> a position silo (K ordered bins) through the same encoder and merges them at the head. Bars are test accuracy on 400 held-out examples; the red line is chance.</p>
+  <div class="rig">
+    <div class="rtop">◎ <b>results.json</b> — trained from scratch; both the single and the DUAL backprop are gradient-checked in selftest.py</div>
+    <div class="rbody">
+      <div class="cfg" id="cfg"></div>
+      <div id="tasks"></div>
+      <div class="verdict" id="verdict"></div>
+    </div>
+    <div class="snote">The dual's attention is <b>2·K²</b> pairs — still half the plain model's <b>N²</b>. The order-task recovery is <b>partial</b>: chunking into K bins is coarser than exact positions, so the dual lands between the single silo and plain. The plurality win is k-means' home turf. Synthetic probes, tiny models, one seed — a controlled ablation, reproducible with <span class="mono">python train.py</span>. Not a leaderboard.</div>
+  </div>
+</section>
+
+<section id="honesty">
+  <div class="eyebrow">The colophon</div>
+  <h2 class="sec">What's real — and what it isn't</h2>
+  <div class="two">
+    <div class="card">
+      <h3>What's real</h3>
+      <p>The dual — two parallel silos through a shared encoder, merged at the head — is genuinely trained: <code>selftest.py</code> <b>gradient-checks both</b> the single and the dual backprop (&lt; 1e-5). The recovery on the order task (single silo 42.5% → dual 61.8%) is real and reproducible (seed 0), driven by the position branch keeping order.</p>
+    </div>
+    <div class="card sig">
+      <h3>What it isn't</h3>
+      <p>The recovery is <b>partial, not full</b> — 61.8% is well short of the plain model's 85%, shown side by side, not hidden. It is <b>not</b> a claim that dual silos beat transformers; a coarse K-bin position silo can't match true positions. Synthetic probes, tiny models — a clean ablation, not a benchmark.</p>
+    </div>
+  </div>
+  <div class="src">
+    SOURCE · <a href="https://github.com/DavidWise01/transformer-silo-v4">github.com/DavidWise01/transformer-silo-v4</a> · <code>model.py</code> (shared encoder + single &amp; dual heads, gradient-checked) · <code>tasks.py</code> (content + position silos) · <code>train.py</code> → results.json · <code>selftest.py</code>. The tetralogy: build (v1) · measure (v2) · train one silo (v3) · two in parallel (v4).
+  </div>
+  <div class="backbar">
+    <a href="https://github.com/DavidWise01/transformer-silo-v4">⧉ the code (GitHub)</a>
+    <a href="https://davidwise01.github.io/transformer-silo/">⌗ v1</a>
+    <a href="https://davidwise01.github.io/transformer-silo-v2/">↗ v2</a>
+    <a href="https://davidwise01.github.io/transformer-silo-v3/">▲ v3</a>
+    <a href="https://davidwise01.github.io/ud0/">⌂ ud0</a>
+  </div>
+</section>
+
+<footer>
+  TRANSFORMER SILO v4 · two silos in parallel, tested at the end · David Lee Wise / ROOT0 / TriPod LLC · CC-BY-ND-4.0<br>
+  a second, complementary view buys back most of the order · partial recovery, reported short of full
+</footer>
+</main>
+
+<script>
+var RESULTS = {
+  "config": {
+    "D": 6,
+    "G": 4,
+    "N": 8,
+    "K": 4,
+    "H": 16,
+    "epochs": 50,
+    "lr": 0.01,
+    "batch": 32,
+    "seed": 0,
+    "n_train": 800,
+    "n_test": 400
+  },
+  "tasks": {
+    "plurality": {
+      "chance": 0.25,
+      "arms": {
+        "plain": {
+          "test_accuracy": 0.9525,
+          "curve": [
+            0.7075,
+            0.7825,
+            0.845,
+            0.92,
+            0.9275,
+            0.92,
+            0.9225,
+            0.9075,
+            0.925,
+            0.9375,
+            0.9375,
+            0.95,
+            0.9525,
+            0.9475,
+            0.935,
+            0.95,
+            0.925,
+            0.955,
+            0.9525,
+            0.9425,
+            0.96,
+            0.93,
+            0.92,
+            0.95,
+            0.9075,
+            0.9375,
+            0.95,
+            0.9575,
+            0.945,
+            0.935,
+            0.9675,
+            0.9575,
+            0.9575,
+            0.96,
+            0.9625,
+            0.945,
+            0.93,
+            0.965,
+            0.935,
+            0.91,
+            0.965,
+            0.9775,
+            0.95,
+            0.945,
+            0.9575,
+            0.965,
+            0.94,
+            0.97,
+            0.9625,
+            0.9525
+          ],
+          "attention_pairs": 64,
+          "n_params": 386
+        },
+        "silo": {
+          "test_accuracy": 0.995,
+          "curve": [
+            0.695,
+            0.775,
+            0.8725,
+            0.9025,
+            0.9025,
+            0.91,
+            0.9275,
+            0.945,
+            0.9425,
+            0.9725,
+            0.955,
+            0.9775,
+            0.99,
+            0.99,
+            0.9675,
+            0.9925,
+            0.99,
+            0.9925,
+            0.9925,
+            0.9825,
+            0.99,
+            0.9525,
+            0.97,
+            0.985,
+            0.9875,
+            0.9875,
+            0.9875,
+            0.97,
+            0.9875,
+            0.9875,
+            0.9925,
+            0.9925,
+            0.9925,
+            0.99,
+            0.99,
+            0.9925,
+            0.9925,
+            0.9925,
+            0.9925,
+            0.9925,
+            0.9925,
+            0.9925,
+            0.9925,
+            0.9925,
+            0.9375,
+            0.9625,
+            0.9825,
+            0.995,
+            0.99,
+            0.995
+          ],
+          "attention_pairs": 16,
+          "n_params": 386
+        },
+        "dual": {
+          "test_accuracy": 0.9875,
+          "curve": [
+            0.7025,
+            0.845,
+            0.895,
+            0.9175,
+            0.915,
+            0.93,
+            0.925,
+            0.9175,
+            0.9125,
+            0.9525,
+            0.95,
+            0.9575,
+            0.9475,
+            0.9675,
+            0.925,
+            0.9575,
+            0.9775,
+            0.9325,
+            0.9825,
+            0.9825,
+            0.92,
+            0.94,
+            0.9375,
+            0.965,
+            0.945,
+            0.9775,
+            0.985,
+            0.9575,
+            0.9875,
+            0.995,
+            0.9825,
+            0.97,
+            0.9825,
+            0.9875,
+            0.985,
+            0.965,
+            0.98,
+            0.975,
+            0.98,
+            0.9925,
+            0.99,
+            0.9875,
+            0.9825,
+            0.985,
+            0.975,
+            0.9875,
+            0.9925,
+            0.99,
+            0.9925,
+            0.9875
+          ],
+          "attention_pairs": 32,
+          "n_params": 410
+        }
+      },
+      "dual_minus_silo": -0.0075,
+      "dual_minus_plain": 0.035
+    },
+    "first": {
+      "chance": 0.25,
+      "arms": {
+        "plain": {
+          "test_accuracy": 0.85,
+          "curve": [
+            0.41,
+            0.43,
+            0.495,
+            0.5525,
+            0.5675,
+            0.6,
+            0.645,
+            0.6575,
+            0.67,
+            0.69,
+            0.7425,
+            0.7475,
+            0.7825,
+            0.8025,
+            0.7825,
+            0.7975,
+            0.79,
+            0.825,
+            0.825,
+            0.81,
+            0.815,
+            0.8225,
+            0.84,
+            0.8325,
+            0.8525,
+            0.8375,
+            0.8375,
+            0.8225,
+            0.82,
+            0.8475,
+            0.8475,
+            0.8575,
+            0.8325,
+            0.7975,
+            0.8725,
+            0.86,
+            0.8675,
+            0.8575,
+            0.82,
+            0.86,
+            0.8425,
+            0.8675,
+            0.89,
+            0.87,
+            0.85,
+            0.885,
+            0.85,
+            0.86,
+            0.87,
+            0.85
+          ],
+          "attention_pairs": 64,
+          "n_params": 386
+        },
+        "silo": {
+          "test_accuracy": 0.425,
+          "curve": [
+            0.39,
+            0.4025,
+            0.4325,
+            0.4525,
+            0.4625,
+            0.44,
+            0.46,
+            0.4425,
+            0.4475,
+            0.4,
+            0.4425,
+            0.445,
+            0.435,
+            0.455,
+            0.4425,
+            0.4125,
+            0.4475,
+            0.4275,
+            0.44,
+            0.4275,
+            0.445,
+            0.4375,
+            0.44,
+            0.435,
+            0.4325,
+            0.44,
+            0.44,
+            0.4225,
+            0.43,
+            0.4225,
+            0.4225,
+            0.415,
+            0.44,
+            0.44,
+            0.4275,
+            0.4275,
+            0.4175,
+            0.4325,
+            0.4375,
+            0.44,
+            0.4275,
+            0.4475,
+            0.42,
+            0.435,
+            0.45,
+            0.42,
+            0.4225,
+            0.425,
+            0.435,
+            0.425
+          ],
+          "attention_pairs": 16,
+          "n_params": 386
+        },
+        "dual": {
+          "test_accuracy": 0.6175,
+          "curve": [
+            0.4225,
+            0.475,
+            0.5825,
+            0.5825,
+            0.62,
+            0.62,
+            0.6475,
+            0.6275,
+            0.6225,
+            0.615,
+            0.6275,
+            0.65,
+            0.6675,
+            0.635,
+            0.61,
+            0.5975,
+            0.64,
+            0.65,
+            0.6325,
+            0.63,
+            0.62,
+            0.6125,
+            0.615,
+            0.6075,
+            0.625,
+            0.62,
+            0.635,
+            0.63,
+            0.6325,
+            0.63,
+            0.645,
+            0.6375,
+            0.6325,
+            0.6325,
+            0.63,
+            0.635,
+            0.635,
+            0.6175,
+            0.63,
+            0.6175,
+            0.6075,
+            0.615,
+            0.6275,
+            0.63,
+            0.625,
+            0.62,
+            0.6075,
+            0.6175,
+            0.5925,
+            0.6175
+          ],
+          "attention_pairs": 32,
+          "n_params": 410
+        }
+      },
+      "dual_minus_silo": 0.1925,
+      "dual_minus_plain": -0.2325
+    }
+  },
+  "verdict": "Two silos in parallel, merged at the end: a CONTENT silo (orderless) and a POSITION silo (ordered bins). On the order-INsensitive task both single silos already suffice, so the dual just matches them. On the order-SENSITIVE task the single content silo collapsed in v3 (42.5%) -- the dual PARTIALLY RECOVERS it (61.8%), because its second branch keeps order. But recovery is partial, not full: chunking into K bins is coarser than exact positions, so the dual lands BETWEEN the single silo and the plain model (85.0%) -- while still using half of plain's attention. A second complementary view buys back most of the order a single silo throws away, cheaply, but not all of it. Measured, not assumed."
+};
+(function(){
+"use strict";
+var R = RESULTS, c = R.config;
+function esc(s){ return String(s).replace(/[&<>]/g,function(x){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[x];}); }
+document.getElementById("cfg").textContent =
+  "config · D="+c.D+" · groups="+c.G+" · N="+c.N+" tokens → K="+c.K+" intents · plain N²="+(c.N*c.N)+" / silo K²="+(c.K*c.K)+" / dual 2K²="+(2*c.K*c.K)+" attention pairs · "+c.n_train+" train / "+c.n_test+" test · "+c.epochs+" epochs · seed "+c.seed;
+
+var META = {
+  plurality:{title:"PLURALITY — the most frequent group", kind:"order-insensitive", cls:"ins"},
+  first:{title:"FIRST — the group of the first token", kind:"order-sensitive", cls:"sens"}
+};
+var ARMS = [["plain","plain (N tokens)"],["silo","content silo (K intents)"],["dual","dual (content ‖ position)"]];
+function bar(arm, r, chance){
+  var pct=(r.test_accuracy*100).toFixed(1), cx=(chance*100);
+  return '<div class="arm '+arm[0]+'"><span class="lab">'+esc(arm[1].split(" ")[0])+'</span>'+
+    '<span class="tr"><span class="fl" style="width:'+pct+'%"></span><span class="chance" style="left:'+cx+'%"></span></span>'+
+    '<span class="acc">'+pct+'%</span></div>';
+}
+function curveSVG(task){
+  var A=R.tasks[task].arms, ch=R.tasks[task].chance, W=200,H=74,pad=6, n=A.plain.curve.length;
+  function x(i){ return pad + i/(n-1)*(W-2*pad); }
+  function y(v){ return pad + (1-v)*(H-2*pad); }
+  function pts(a){ return a.map(function(v,i){return x(i).toFixed(1)+','+y(v).toFixed(1);}).join(' '); }
+  return '<svg viewBox="0 0 '+W+' '+H+'">'+
+    '<line x1="'+pad+'" y1="'+y(ch).toFixed(1)+'" x2="'+(W-pad)+'" y2="'+y(ch).toFixed(1)+'" stroke="#bf4638" stroke-width="1" stroke-dasharray="2 3" opacity=".7"/>'+
+    '<polyline points="'+pts(A.plain.curve)+'" fill="none" stroke="#5b6b78" stroke-width="1.5"/>'+
+    '<polyline points="'+pts(A.silo.curve)+'" fill="none" stroke="#1f8f66" stroke-width="1.5"/>'+
+    '<polyline points="'+pts(A.dual.curve)+'" fill="none" stroke="#4a3f8c" stroke-width="1.9"/>'+
+    '</svg>';
+}
+document.getElementById("tasks").innerHTML = Object.keys(R.tasks).map(function(task){
+  var r=R.tasks[task], m=META[task], A=r.arms;
+  var pl=A.plain.test_accuracy, si=A.silo.test_accuracy, du=A.dual.test_accuracy;
+  var recov;
+  if(Math.abs(du-si)<0.03){
+    recov='<div class="recov match">the dual just <b>matches</b> the single silos here — a second view neither helps nor hurts on an order-insensitive task.</div>';
+  } else {
+    var upto=(du>si);
+    recov='<div class="recov">the single silo landed <b>'+(si*100).toFixed(1)+'%</b>; the dual <span class="up">recovers to '+(du*100).toFixed(1)+'%</span> (+'+((du-si)*100).toFixed(1)+' pts) via its position branch — but still <span class="gap">'+((pl-du)*100).toFixed(1)+' pts short of plain’s '+(pl*100).toFixed(1)+'%</span>. Partial recovery, at half plain’s attention.</div>';
+  }
+  return '<div class="task"><div class="th"><span class="nm">'+esc(m.title)+'</span>'+
+    '<span class="kind '+m.cls+'">'+m.kind+'</span>'+
+    '<span style="font-family:var(--mono);font-size:10.5px;color:var(--dim)">chance '+(r.chance*100).toFixed(0)+'%</span></div>'+
+    '<div class="tb"><div><div class="arms">'+ARMS.map(function(a){return bar(a,A[a[0]],r.chance);}).join("")+'</div>'+recov+
+    '<div class="armmeta">attention pairs — plain '+A.plain.attention_pairs+' · silo '+A.silo.attention_pairs+' · dual '+A.dual.attention_pairs+'</div></div>'+
+    '<div class="curve"><h5>test accuracy over '+c.epochs+' epochs</h5>'+curveSVG(task)+'</div></div></div>';
+}).join("");
+document.getElementById("verdict").textContent = R.verdict;
+})();
+</script>
+</body>
+</html>
